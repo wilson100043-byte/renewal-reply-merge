@@ -82,7 +82,7 @@ python3 serve.py
 
 ## 原型限制
 
-- 已部署至 GitHub Pages；尚未配置實際 Google OAuth Client ID，因此目前需使用已下載的雲端來源檔。
+- 已部署至 GitHub Pages，並配置 External／Testing Google OAuth Client ID；只有列在 Google Cloud Test users 的帳號可以直接讀取 Drive 來源檔。
 - Access Token 到期後，使用者需要再次按登入按鈕。
 - GitHub Pages 無排程與後端，更新必須由使用者開啟網站後執行。
 - Windows 與 Mac 使用相同瀏覽器程式碼；仍需以 Windows Excel 實機開啟輸出檔完成正式驗收。
