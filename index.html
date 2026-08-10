@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="在瀏覽器中安全合併業務續訂回覆，預覽後產生新版 Excel。"
+    />
+    <title>續訂回覆合併台</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23183f52'/%3E%3Cpath d='M15 20h13v6h-7v5h6v6h-6v10h-6zm22 0h12v6h-6v15h6v6H37z' fill='white'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="vendor/fflate.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="config.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">跳到操作區</a>
+
+    <header class="masthead">
+      <div class="brand-block">
+        <div>
+          <h1>續訂回覆合併台</h1>
+        </div>
+      </div>
+    </header>
+
+    <main id="workspace" class="workspace">
+      <aside class="process-rail" aria-label="處理步驟">
+        <div class="rail-intro">
+          <h2>即時更新續訂狀態</h2>
+          <p>先讀雲端，再選本機原檔，確認變更後才產生新檔。</p>
+        </div>
+
+        <ol class="steps" id="steps">
+          <li class="step is-active" data-step="source">
+            <strong>讀取回覆</strong>
+          </li>
+          <li class="step" data-step="target">
+            <strong>選擇原檔</strong>
+          </li>
+          <li class="step" data-step="preview">
+            <strong>預覽並下載</strong>
+          </li>
+        </ol>
+
+        <div class="merge-rule" aria-label="合併規則">
+          <span class="rule-cell current">本月回覆</span>
+          <span class="rule-sign">＋</span>
+          <span class="rule-cell history">上月回覆</span>
+          <span class="rule-arrow">→</span>
+          <span class="rule-cell result">新歷史</span>
+        </div>
+      </aside>
+
+      <section class="control-deck" aria-label="更新工具">
+        <div id="globalMessage" class="message" role="status" aria-live="polite" hidden></div>
+
+        <section class="panel" aria-labelledby="sourceTitle">
+          <div class="panel-heading">
+            <div>
+              <h2 id="sourceTitle">讀取雲端業務回覆</h2>
+            </div>
+            <span id="sourceStatus" class="status-chip">尚未讀取</span>
+          </div>
+
+          <div class="field-stack">
+            <label for="driveUrl">Google Drive Excel 連結</label>
+            <div class="field-action">
+              <input
+                id="driveUrl"
+                type="url"
+                inputmode="url"
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                autocomplete="off"
+              />
+              <button id="connectDrive" class="button primary" type="button">登入並讀取</button>
+            </div>
+            <p class="field-help">只要求 Drive 唯讀權限；權限不會儲存在 GitHub。</p>
+          </div>
+
+          <details class="fallback-box">
+            <summary>開發測試或無法登入時，改用已下載的雲端檔</summary>
+            <div class="file-field">
+              <label class="file-picker" for="sourceFile" tabindex="0">
+                <span>選擇雲端來源 Excel</span>
+                <small id="sourceFileName">尚未選擇</small>
+              </label>
+              <input id="sourceFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+            </div>
+          </details>
+
+          <div class="two-column-fields">
+            <div class="field-stack">
+              <label for="sourceSheet">月份分頁</label>
+              <select id="sourceSheet" disabled>
+                <option value="">讀取來源後選擇</option>
+              </select>
+            </div>
+            <div class="source-facts" id="sourceFacts" aria-live="polite">
+              <span>檔案</span><strong>—</strong>
+              <span>分頁</span><strong>—</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="targetTitle">
+          <div class="panel-heading">
+            <div>
+              <h2 id="targetTitle">選擇要更新的本機 Excel</h2>
+            </div>
+            <span id="targetStatus" class="status-chip">尚未選擇</span>
+          </div>
+
+          <div class="file-field target-file-field">
+            <label class="file-picker large" for="targetFile" tabindex="0">
+              <span>選擇「未績訂」原檔</span>
+              <small id="targetFileName">原檔不會被覆蓋</small>
+            </label>
+            <input id="targetFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+          </div>
+
+          <div class="safety-line">
+            <span>更新工作表：<strong id="targetSheetName">續訂清單</strong></span>
+            <span>比對鍵：<strong>編號細目</strong></span>
+            <span>寫入欄：<strong>上個月回覆</strong></span>
+          </div>
+        </section>
+
+        <section class="panel preview-panel" aria-labelledby="previewTitle">
+          <div class="panel-heading">
+            <div>
+              <h2 id="previewTitle">先看變更，再產生新檔</h2>
+            </div>
+            <button id="runPreview" class="button accent" type="button" disabled>檢查更新</button>
+          </div>
+
+          <div id="emptyPreview" class="empty-preview">
+            <span class="empty-symbol" aria-hidden="true">≋</span>
+            <p>來源與本機檔案準備好後，這裡會列出預計修改的編號與內容。</p>
+          </div>
+
+          <div id="previewContent" hidden>
+            <div class="summary-grid" aria-label="更新摘要">
+              <div class="summary-card"><span>雲端編號</span><strong id="countSource">0</strong></div>
+              <div class="summary-card positive"><span>預計修改列</span><strong id="countChanges">0</strong></div>
+              <div class="summary-card"><span>無需修改</span><strong id="countUnchanged">0</strong></div>
+              <div class="summary-card warning"><span>需要留意</span><strong id="countIssues">0</strong></div>
+            </div>
+
+            <div class="table-toolbar">
+              <div>
+                <h3>變更明細</h3>
+                <p id="previewCaption">顯示前 100 筆</p>
+              </div>
+              <div class="filter-tabs" role="group" aria-label="預覽篩選">
+                <button class="filter-tab is-selected" data-filter="changes" type="button">會修改</button>
+                <button class="filter-tab" data-filter="issues" type="button">異常</button>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>編號細目</th>
+                    <th>本機列</th>
+                    <th>原本內容</th>
+                    <th>更新後內容</th>
+                  </tr>
+                </thead>
+                <tbody id="previewRows"></tbody>
+              </table>
+            </div>
+
+            <div class="download-bar">
+              <div>
+                <strong>原檔保持不變</strong>
+                <span>按下後會下載一份含日期的新 Excel。</span>
+              </div>
+              <button id="downloadResult" class="button download" type="button">產生新版 Excel</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer>
+      <span>續訂回覆合併台 · GitHub Pages</span>
+      <span>不保存 Excel、Token 或客戶資料</span>
+    </footer>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
