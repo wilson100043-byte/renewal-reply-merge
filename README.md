@@ -2,6 +2,8 @@
 
 這是一個可部署到 GitHub Pages 的純前端工具。它從 Google Drive 讀取業務回覆 Excel，並在瀏覽器記憶體中更新使用者選擇的本機 Excel 複本。
 
+正式網站：<https://wilson100043-byte.github.io/renewal-reply-merge/>
+
 ## 使用者流程
 
 1. 貼上 Google Drive Excel 連結並登入 Google。
@@ -80,7 +82,7 @@ python3 serve.py
 
 ## 原型限制
 
-- 尚未部署，也尚未配置實際 Google OAuth Client ID。
+- 已部署至 GitHub Pages；尚未配置實際 Google OAuth Client ID，因此目前需使用已下載的雲端來源檔。
 - Access Token 到期後，使用者需要再次按登入按鈕。
 - GitHub Pages 無排程與後端，更新必須由使用者開啟網站後執行。
 - Windows 與 Mac 使用相同瀏覽器程式碼；仍需以 Windows Excel 實機開啟輸出檔完成正式驗收。
