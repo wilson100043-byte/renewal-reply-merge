@@ -5,6 +5,7 @@ window.APP_CONFIG = Object.freeze({
   targetSheetName: "續訂清單",
   headers: Object.freeze({
     id: "編號細目",
+    renewalStatus: "續訂/停訂",
     currentReply: "本月回覆",
     previousReply: "上個月回覆",
   }),

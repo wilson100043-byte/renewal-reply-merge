@@ -242,6 +242,7 @@ export function listSheetNames(workbook) {
 function readSourceGroups(sourceSheet, workbook, headers, period) {
   const header = findHeader(sourceSheet.document, workbook.sharedStrings, [
     headers.id,
+    headers.renewalStatus,
     headers.currentReply,
     headers.previousReply,
   ]);
@@ -254,16 +255,17 @@ function readSourceGroups(sourceSheet, workbook, headers, period) {
     if (rowNumber <= header.rowNumber) continue;
     const cells = rowCells(row, workbook.sharedStrings);
     const id = normalizeIdentifier(cells.get(header.columns[headers.id])?.value);
+    const renewalStatus = normalizeReply(cells.get(header.columns[headers.renewalStatus])?.value);
     const current = normalizeReply(cells.get(header.columns[headers.currentReply])?.value);
     const previous = normalizeReply(cells.get(header.columns[headers.previousReply])?.value);
-    if (!id && !current && !previous) continue;
+    if (!id && !renewalStatus && !current && !previous) continue;
     dataRows += 1;
     if (!id) {
       blankIds += 1;
       continue;
     }
     const merged = joinReplies(current, previous, period);
-    const item = { id, current, previous, merged, rowNumber };
+    const item = { id, renewalStatus, current, previous, merged, rowNumber };
     if (!groups.has(id)) groups.set(id, []);
     groups.get(id).push(item);
   }
@@ -273,6 +275,7 @@ function readSourceGroups(sourceSheet, workbook, headers, period) {
 function readTargetIndex(targetSheet, workbook, headers) {
   const header = findHeader(targetSheet.document, workbook.sharedStrings, [
     headers.id,
+    headers.renewalStatus,
     headers.previousReply,
   ]);
   const index = new Map();
@@ -288,13 +291,16 @@ function readTargetIndex(targetSheet, workbook, headers) {
       continue;
     }
     const replyCell = cells.get(header.columns[headers.previousReply]);
+    const renewalStatusCell = cells.get(header.columns[headers.renewalStatus]);
     const item = {
       id,
       row,
       rowNumber,
       oldReply: normalizeReply(replyCell?.value),
       replyCell: replyCell?.node || null,
-      hasFormula: Boolean(replyCell?.hasFormula),
+      replyHasFormula: Boolean(replyCell?.hasFormula),
+      oldRenewalStatus: normalizeReply(renewalStatusCell?.value),
+      renewalStatusHasFormula: Boolean(renewalStatusCell?.hasFormula),
     };
     if (!index.has(id)) index.set(id, []);
     index.get(id).push(item);
@@ -302,14 +308,20 @@ function readTargetIndex(targetSheet, workbook, headers) {
   return { index, blankIds, header };
 }
 
-function conflictRecord(id, records) {
+function conflictRecord(id, records, replyConflict, renewalStatusConflict) {
+  const fields = [
+    replyConflict ? "回覆" : "",
+    renewalStatusConflict ? "續訂/停訂" : "",
+  ].filter(Boolean);
   return {
     type: "conflict",
     id,
     rowNumber: records.map((item) => item.rowNumber).join("、"),
-    message: "雲端同一編號出現不同合併結果",
+    message: `雲端同一編號出現不同${fields.join("與")}結果`,
     oldReply: "",
-    newReply: records.map((item) => item.merged || "（空白）").join(" ｜ "),
+    newReply: records
+      .map((item) => `${item.renewalStatus || "（狀態空白）"}｜${item.merged || "（回覆空白）"}`)
+      .join("；"),
   };
 }
 
@@ -339,14 +351,20 @@ export function buildPreview({
 
   for (const [id, records] of source.groups) {
     const distinctResults = [...new Set(records.map((item) => item.merged))];
-    if (distinctResults.length > 1) {
-      issues.push(conflictRecord(id, records));
+    const distinctRenewalStatuses = [
+      ...new Set(records.map((item) => item.renewalStatus).filter(Boolean)),
+    ];
+    const replyConflict = distinctResults.length > 1;
+    const renewalStatusConflict = distinctRenewalStatuses.length > 1;
+    if (replyConflict || renewalStatusConflict) {
+      issues.push(conflictRecord(id, records, replyConflict, renewalStatusConflict));
       continue;
     }
     const merged = distinctResults[0] || "";
+    const renewalStatus = distinctRenewalStatuses[0] || "";
     if (!merged) {
       skippedEmpty += 1;
-      continue;
+      if (!renewalStatus) continue;
     }
     const targetRows = target.index.get(id);
     if (!targetRows?.length) {
@@ -361,27 +379,48 @@ export function buildPreview({
       continue;
     }
     for (const targetRow of targetRows) {
-      if (targetRow.hasFormula) {
-        issues.push({
-          type: "formula",
-          id,
-          rowNumber: targetRow.rowNumber,
-          message: "目標儲存格含公式，未自動覆蓋",
-          oldReply: targetRow.oldReply,
-          newReply: merged,
-        });
-      } else if (targetRow.oldReply === merged) {
-        unchangedRows += 1;
-      } else {
+      let rowChanged = false;
+      let rowHasIssue = false;
+      const compareField = (field, oldValue, newValue, column, hasFormula) => {
+        if (!newValue || oldValue === newValue) return;
+        if (hasFormula) {
+          rowHasIssue = true;
+          issues.push({
+            type: "formula",
+            id,
+            rowNumber: targetRow.rowNumber,
+            message: `${field}儲存格含公式，未自動覆蓋`,
+            oldReply: oldValue,
+            newReply: newValue,
+          });
+          return;
+        }
+        rowChanged = true;
         changes.push({
           id,
+          field,
           row: targetRow.row,
           rowNumber: targetRow.rowNumber,
-          oldReply: targetRow.oldReply,
-          newReply: merged,
-          column: target.header.columns[headers.previousReply],
+          oldReply: oldValue,
+          newReply: newValue,
+          column,
         });
-      }
+      };
+      compareField(
+        headers.previousReply,
+        targetRow.oldReply,
+        merged,
+        target.header.columns[headers.previousReply],
+        targetRow.replyHasFormula,
+      );
+      compareField(
+        headers.renewalStatus,
+        targetRow.oldRenewalStatus,
+        renewalStatus,
+        target.header.columns[headers.renewalStatus],
+        targetRow.renewalStatusHasFormula,
+      );
+      if (!rowChanged && !rowHasIssue) unchangedRows += 1;
     }
   }
 
@@ -413,7 +452,7 @@ export function buildPreview({
     stats: {
       sourceRows: source.dataRows,
       sourceIds: source.groups.size,
-      changedRows: changes.length,
+      changedRows: new Set(changes.map((change) => change.rowNumber)).size,
       unchangedRows,
       skippedEmpty,
       issueCount: issues.length,

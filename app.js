@@ -312,7 +312,7 @@ function renderPreviewRows() {
   if (!visible.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 4;
+    cell.colSpan = 5;
     cell.textContent = state.activeFilter === "changes" ? "目前沒有需要修改的資料。" : "目前沒有異常資料。";
     row.appendChild(cell);
     elements.previewRows.appendChild(row);
@@ -322,6 +322,7 @@ function renderPreviewRows() {
       row.appendChild(makeCell(item.id));
       row.appendChild(makeCell(String(item.rowNumber || "—")));
       if (state.activeFilter === "changes") {
+        row.appendChild(makeCell(item.field));
         row.appendChild(makeCell(item.oldReply, "cell-reply"));
         row.appendChild(makeCell(item.newReply, "cell-reply"));
       } else {
@@ -331,6 +332,7 @@ function renderPreviewRows() {
         label.textContent = item.message;
         issueCell.appendChild(label);
         row.appendChild(issueCell);
+        row.appendChild(makeCell(item.oldReply, "cell-reply"));
         row.appendChild(makeCell(item.newReply, "cell-reply"));
       }
       elements.previewRows.appendChild(row);
@@ -364,7 +366,7 @@ function runPreview() {
       state.preview.changes.length === 0 || !state.targetFileHandle;
     showMessage(
       state.preview.changes.length
-        ? `檢查完成：${state.preview.replyPeriod} 回覆，預計修改 ${state.preview.changes.length} 列。`
+        ? `檢查完成：${state.preview.replyPeriod} 回覆，預計修改 ${state.preview.stats.changedRows} 列、${state.preview.changes.length} 個欄位。`
         : "檢查完成：目前沒有需要修改的資料。",
       state.preview.issues.length ? "info" : "success",
     );
@@ -432,7 +434,7 @@ async function overwriteOriginal() {
     showMessage("沒有需要覆寫的修改。", "error");
     return;
   }
-  if (!globalThis.confirm(`將修改 ${changeCount} 列並覆寫「${state.targetName}」。\n覆寫前會先下載原檔備份，是否繼續？`)) return;
+  if (!globalThis.confirm(`將修改 ${state.preview.stats.changedRows} 列、${changeCount} 個欄位並覆寫「${state.targetName}」。\n覆寫前會先下載原檔備份，是否繼續？`)) return;
 
   clearMessage();
   elements.overwriteOriginal.disabled = true;
