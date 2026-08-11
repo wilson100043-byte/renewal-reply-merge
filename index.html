@@ -113,9 +113,9 @@
           </div>
 
           <div class="file-field target-file-field">
-            <label class="file-picker large" for="targetFile" tabindex="0">
+            <label id="targetFilePicker" class="file-picker large" for="targetFile" tabindex="0">
               <span>選擇「未績訂」原檔</span>
-              <small id="targetFileName">原檔不會被覆蓋</small>
+              <small id="targetFileName">可下載新版或備份後覆寫</small>
             </label>
             <input id="targetFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
           </div>
@@ -130,7 +130,7 @@
         <section class="panel preview-panel" aria-labelledby="previewTitle">
           <div class="panel-heading">
             <div>
-              <h2 id="previewTitle">先看變更，再產生新檔</h2>
+              <h2 id="previewTitle">先看變更，再選擇輸出</h2>
             </div>
             <button id="runPreview" class="button accent" type="button" disabled>檢查更新</button>
           </div>
@@ -175,10 +175,13 @@
 
             <div class="download-bar">
               <div>
-                <strong>原檔保持不變</strong>
-                <span>按下後會下載一份含日期的新 Excel。</span>
+                <strong>選擇輸出方式</strong>
+                <span>可下載新版，或先備份原檔再直接覆寫。</span>
               </div>
-              <button id="downloadResult" class="button download" type="button">產生新版 Excel</button>
+              <div class="download-actions">
+                <button id="downloadResult" class="button download" type="button" disabled>產生新版 Excel</button>
+                <button id="overwriteOriginal" class="button overwrite" type="button" disabled>備份後覆寫原檔</button>
+              </div>
             </div>
           </div>
         </section>

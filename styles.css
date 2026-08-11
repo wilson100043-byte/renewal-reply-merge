@@ -236,6 +236,7 @@ select:disabled { cursor: not-allowed; color: #82949b; background: #f1f5f6; }
 .button.primary { color: var(--white); background: var(--cloud); box-shadow: 0 8px 18px rgba(45,110,139,.18); }
 .button.accent { color: #382707; background: var(--signal); }
 .button.download { min-width: 180px; color: var(--white); background: var(--success); }
+.button.overwrite { color: var(--white); background: var(--danger); }
 
 .fallback-box {
   margin-top: 16px;
@@ -316,6 +317,7 @@ tbody tr:nth-child(even) { background: #f7fafb; }
 .download-bar strong, .download-bar span { display: block; }
 .download-bar strong { color: var(--white); }
 .download-bar span { font-size: 12px; }
+.download-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 
 .message { margin-bottom: 18px; padding: 13px 15px; color: var(--cloud-deep); background: #e8f2f5; border-left: 4px solid var(--cloud); border-radius: 6px; }
 .message.is-error { color: #6f272d; background: #f9e9eb; border-color: var(--danger); }
@@ -344,6 +346,7 @@ footer { display: flex; justify-content: space-between; max-width: 1480px; margi
   .merge-rule { margin: 18px 18px 22px; }
   .panel { padding: 20px; }
   .panel-heading, .table-toolbar, .download-bar { align-items: stretch; flex-direction: column; }
+  .download-actions { flex-direction: column; }
   .field-action, .two-column-fields { grid-template-columns: 1fr; }
   .summary-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .button { width: 100%; }

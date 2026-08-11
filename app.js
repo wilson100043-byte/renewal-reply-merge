@@ -6,12 +6,15 @@ import {
   makeOutputName,
   openWorkbook,
 } from "./xlsx-engine.js";
+import { makeBackupName, writeFileHandle } from "./file-output.js";
 
 const config = globalThis.APP_CONFIG;
 const state = {
   accessToken: "",
   sourceWorkbook: null,
   targetWorkbook: null,
+  targetFileHandle: null,
+  targetOriginalFile: null,
   sourceName: "",
   targetName: "",
   preview: null,
@@ -29,6 +32,7 @@ const elements = Object.fromEntries(
     "sourceStatus",
     "sourceFacts",
     "targetFile",
+    "targetFilePicker",
     "targetFileName",
     "targetStatus",
     "targetSheetName",
@@ -42,6 +46,7 @@ const elements = Object.fromEntries(
     "previewCaption",
     "previewRows",
     "downloadResult",
+    "overwriteOriginal",
   ].map((id) => [id, document.getElementById(id)]),
 );
 
@@ -253,6 +258,7 @@ async function loadTargetFile(file) {
       throw new Error(`本機 Excel 找不到「${config.targetSheetName}」工作表。`);
     }
     state.targetWorkbook = workbook;
+    state.targetOriginalFile = file;
     state.targetName = file.name;
     state.preview = null;
     elements.targetFileName.textContent = `${file.name} · ${formatBytes(file.size)}`;
@@ -261,6 +267,8 @@ async function loadTargetFile(file) {
     updateSteps();
   } catch (error) {
     state.targetWorkbook = null;
+    state.targetFileHandle = null;
+    state.targetOriginalFile = null;
     setStatus(elements.targetStatus, "讀取失敗", "error");
     showMessage(friendlyError(error), "error");
     updateSteps();
@@ -272,6 +280,8 @@ function resetPreview() {
   elements.previewContent.hidden = true;
   elements.emptyPreview.hidden = false;
   elements.previewRows.replaceChildren();
+  elements.downloadResult.disabled = true;
+  elements.overwriteOriginal.disabled = true;
 }
 
 function issueCount(preview) {
@@ -350,6 +360,8 @@ function runPreview() {
     elements.emptyPreview.hidden = true;
     elements.previewContent.hidden = false;
     elements.downloadResult.disabled = state.preview.changes.length === 0;
+    elements.overwriteOriginal.disabled =
+      state.preview.changes.length === 0 || !state.targetFileHandle;
     showMessage(
       state.preview.changes.length
         ? `檢查完成：${state.preview.replyPeriod} 回覆，預計修改 ${state.preview.changes.length} 列。`
@@ -386,9 +398,71 @@ function downloadResult() {
   }
 }
 
+async function chooseTargetFile() {
+  if (typeof globalThis.showOpenFilePicker !== "function") {
+    elements.targetFile.click();
+    return;
+  }
+  try {
+    const [handle] = await globalThis.showOpenFilePicker({
+      multiple: false,
+      types: [
+        {
+          description: "Excel 活頁簿",
+          accept: {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+          },
+        },
+      ],
+    });
+    state.targetFileHandle = handle;
+    await loadTargetFile(await handle.getFile());
+  } catch (error) {
+    if (error?.name !== "AbortError") showMessage(friendlyError(error), "error");
+  }
+}
+
+async function overwriteOriginal() {
+  if (!state.targetFileHandle || !state.targetOriginalFile) {
+    showMessage("請重新選擇原檔，才能取得覆寫權限。", "error");
+    return;
+  }
+  const changeCount = state.preview?.changes?.length || 0;
+  if (!changeCount) {
+    showMessage("沒有需要覆寫的修改。", "error");
+    return;
+  }
+  if (!globalThis.confirm(`將修改 ${changeCount} 列並覆寫「${state.targetName}」。\n覆寫前會先下載原檔備份，是否繼續？`)) return;
+
+  clearMessage();
+  elements.overwriteOriginal.disabled = true;
+  elements.overwriteOriginal.textContent = "正在備份並覆寫…";
+  try {
+    const blob = createUpdatedWorkbook(state.targetWorkbook, state.preview);
+    const backupName = makeBackupName(state.targetName);
+    downloadBlob(state.targetOriginalFile, backupName);
+    await writeFileHandle(state.targetFileHandle, blob);
+
+    state.targetOriginalFile = new File([blob], state.targetName, { type: blob.type });
+    resetPreview();
+    showMessage(`已下載「${backupName}」，並完成覆寫「${state.targetName}」。`, "success");
+  } catch (error) {
+    showMessage(`原檔未完成覆寫：${friendlyError(error)}`, "error");
+  } finally {
+    elements.overwriteOriginal.textContent = "備份後覆寫原檔";
+  }
+}
+
 elements.connectDrive.addEventListener("click", loadDriveWorkbook);
 elements.sourceFile.addEventListener("change", (event) => loadLocalSourceFile(event.target.files?.[0]));
-elements.targetFile.addEventListener("change", (event) => loadTargetFile(event.target.files?.[0]));
+elements.targetFilePicker.addEventListener("click", (event) => {
+  event.preventDefault();
+  chooseTargetFile();
+});
+elements.targetFile.addEventListener("change", (event) => {
+  state.targetFileHandle = null;
+  loadTargetFile(event.target.files?.[0]);
+});
 elements.sourceSheet.addEventListener("change", () => {
   localStorage.setItem("renewal.sourceSheet", elements.sourceSheet.value);
   resetPreview();
@@ -396,6 +470,7 @@ elements.sourceSheet.addEventListener("change", () => {
 });
 elements.runPreview.addEventListener("click", runPreview);
 elements.downloadResult.addEventListener("click", downloadResult);
+elements.overwriteOriginal.addEventListener("click", overwriteOriginal);
 
 document.querySelectorAll(".filter-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
@@ -409,9 +484,14 @@ document.querySelectorAll("label.file-picker[for]").forEach((label) => {
   label.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    document.getElementById(label.htmlFor)?.click();
+    if (label === elements.targetFilePicker) chooseTargetFile();
+    else document.getElementById(label.htmlFor)?.click();
   });
 });
+
+if (typeof globalThis.showOpenFilePicker !== "function") {
+  elements.overwriteOriginal.hidden = true;
+}
 
 window.addEventListener("error", (event) => {
   if (event.message?.includes("ResizeObserver")) return;
