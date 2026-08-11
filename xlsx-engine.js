@@ -81,8 +81,12 @@ function columnNumber(column) {
   return result;
 }
 
-function normalizeIdentifier(value) {
+export function normalizeIdentifier(value) {
   const normalized = String(value ?? "").trim();
+  if (/^[+-]?(?:\d+\.?\d*|\.\d+)[eE][+-]?\d+$/.test(normalized)) {
+    const expanded = Number(normalized);
+    if (Number.isSafeInteger(expanded)) return String(expanded);
+  }
   return normalized.replace(/\.0$/, "");
 }
 
