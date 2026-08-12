@@ -159,25 +159,12 @@
               </div>
             </div>
 
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>編號細目</th>
-                    <th>本機列</th>
-                    <th>更新欄位</th>
-                    <th>原本內容</th>
-                    <th>更新後內容</th>
-                  </tr>
-                </thead>
-                <tbody id="previewRows"></tbody>
-              </table>
-            </div>
+            <div id="previewRows" class="preview-list" role="list" aria-live="polite"></div>
 
             <div class="download-bar">
               <div>
                 <strong>選擇輸出方式</strong>
-                <span>可下載新版，或先備份原檔再直接覆寫。</span>
+                <span>下載新版最穩定；覆寫原檔前請先關閉 Excel。</span>
               </div>
               <div class="download-actions">
                 <button id="downloadResult" class="button download" type="button" disabled>產生新版 Excel</button>

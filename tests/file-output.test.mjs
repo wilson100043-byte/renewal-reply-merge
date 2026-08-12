@@ -12,15 +12,33 @@ test("names the backup as the pre-overwrite copy", () => {
 
 test("writes and closes the selected file handle", async () => {
   const events = [];
+  let contents = new Blob([]);
   const handle = {
     createWritable: async () => ({
-      write: async (blob) => events.push(["write", await blob.text()]),
+      write: async (blob) => {
+        contents = blob;
+        events.push(["write", await blob.text()]);
+      },
       close: async () => events.push(["close"]),
     }),
+    getFile: async () => contents,
   };
 
-  await writeFileHandle(handle, new Blob(["updated"]));
+  const written = await writeFileHandle(handle, new Blob(["updated"]));
   assert.deepEqual(events, [["write", "updated"], ["close"]]);
+  assert.equal(await written.text(), "updated");
+});
+
+test("rejects when the file read back does not match", async () => {
+  const handle = {
+    createWritable: async () => ({ write: async () => {}, close: async () => {} }),
+    getFile: async () => new Blob(["old contents"]),
+  };
+
+  await assert.rejects(
+    writeFileHandle(handle, new Blob(["new contents"])),
+    (error) => error.code === "WRITE_VERIFICATION_FAILED",
+  );
 });
 
 test("snapshots backup bytes before the source file changes", async () => {

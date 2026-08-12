@@ -91,6 +91,16 @@ function friendlyError(error) {
   return error?.message || "發生未預期的錯誤。";
 }
 
+function friendlyOverwriteError(error) {
+  if (error?.code === "WRITE_VERIFICATION_FAILED") {
+    return "寫入後驗證失敗，原檔可能沒有更新。請關閉 Excel 中開啟的原檔，重新選擇後再試一次。";
+  }
+  if (error?.name === "NoModificationAllowedError" || /lock|permission|denied|不允許/i.test(error?.message || "")) {
+    return "無法覆寫原檔。請先關閉 Excel 中開啟的原檔，重新選擇後再試一次。";
+  }
+  return friendlyError(error);
+}
+
 function formatBytes(size) {
   if (!Number.isFinite(size)) return "—";
   if (size < 1024) return `${size} B`;
@@ -295,11 +305,71 @@ function renderSummary(preview) {
   elements.countIssues.textContent = issueCount(preview).toLocaleString("zh-TW");
 }
 
-function makeCell(text, className = "") {
-  const cell = document.createElement("td");
-  cell.textContent = text || "—";
-  if (className) cell.className = className;
-  return cell;
+function makeValuePanel(label, value, className = "") {
+  const panel = document.createElement("div");
+  panel.className = `change-value ${className}`.trim();
+  const heading = document.createElement("span");
+  heading.className = "change-value-label";
+  heading.textContent = label;
+  const content = document.createElement("div");
+  content.className = "change-value-content";
+  content.textContent = value || "（空白）";
+  panel.append(heading, content);
+  return panel;
+}
+
+function makeChangeCard(item) {
+  const card = document.createElement("article");
+  card.className = "change-card";
+  card.setAttribute("role", "listitem");
+
+  const header = document.createElement("div");
+  header.className = "change-card-header";
+  const identity = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = `編號 ${item.id}`;
+  const meta = document.createElement("span");
+  meta.textContent = `本機第 ${item.rowNumber} 列`;
+  identity.append(title, meta);
+  const field = document.createElement("span");
+  field.className = "change-field";
+  field.textContent = item.field;
+  header.append(identity, field);
+
+  const comparison = document.createElement("div");
+  comparison.className = "change-comparison";
+  comparison.append(
+    makeValuePanel("原本內容", item.oldReply, "is-old"),
+    makeValuePanel("將改成", item.newReply, "is-new"),
+  );
+  card.append(header, comparison);
+  return card;
+}
+
+function makeIssueCard(item) {
+  const card = document.createElement("article");
+  card.className = "change-card issue-card";
+  card.setAttribute("role", "listitem");
+  const header = document.createElement("div");
+  header.className = "change-card-header";
+  const identity = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = `編號 ${item.id}`;
+  const meta = document.createElement("span");
+  meta.textContent = item.rowNumber === "—" ? "未對應本機列" : `本機第 ${item.rowNumber} 列`;
+  identity.append(title, meta);
+  const label = document.createElement("span");
+  label.className = "issue-label";
+  label.textContent = item.message;
+  header.append(identity, label);
+  const comparison = document.createElement("div");
+  comparison.className = "change-comparison";
+  comparison.append(
+    makeValuePanel("原本內容", item.oldReply, "is-old"),
+    makeValuePanel("需要確認的內容", item.newReply, "is-new"),
+  );
+  card.append(header, comparison);
+  return card;
 }
 
 function renderPreviewRows() {
@@ -310,35 +380,23 @@ function renderPreviewRows() {
   elements.previewRows.replaceChildren();
 
   if (!visible.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 5;
-    cell.textContent = state.activeFilter === "changes" ? "目前沒有需要修改的資料。" : "目前沒有異常資料。";
-    row.appendChild(cell);
-    elements.previewRows.appendChild(row);
+    const empty = document.createElement("p");
+    empty.className = "preview-list-empty";
+    empty.textContent = state.activeFilter === "changes" ? "目前沒有需要修改的資料。" : "目前沒有異常資料。";
+    elements.previewRows.appendChild(empty);
   } else {
     for (const item of visible) {
-      const row = document.createElement("tr");
-      row.appendChild(makeCell(item.id));
-      row.appendChild(makeCell(String(item.rowNumber || "—")));
-      if (state.activeFilter === "changes") {
-        row.appendChild(makeCell(item.field));
-        row.appendChild(makeCell(item.oldReply, "cell-reply"));
-        row.appendChild(makeCell(item.newReply, "cell-reply"));
-      } else {
-        const issueCell = document.createElement("td");
-        const label = document.createElement("span");
-        label.className = "issue-label";
-        label.textContent = item.message;
-        issueCell.appendChild(label);
-        row.appendChild(issueCell);
-        row.appendChild(makeCell(item.oldReply, "cell-reply"));
-        row.appendChild(makeCell(item.newReply, "cell-reply"));
-      }
-      elements.previewRows.appendChild(row);
+      elements.previewRows.appendChild(
+        state.activeFilter === "changes" ? makeChangeCard(item) : makeIssueCard(item),
+      );
     }
   }
-  elements.previewCaption.textContent = `共 ${rows.length.toLocaleString("zh-TW")} 筆，顯示前 ${Math.min(rows.length, config.previewLimit)} 筆`;
+  const fieldSummary = state.activeFilter === "changes"
+    ? [...new Map(rows.map((item) => [item.field, 0])).keys()]
+        .map((field) => `${field} ${rows.filter((item) => item.field === field).length} 項`)
+        .join("、")
+    : "";
+  elements.previewCaption.textContent = `共 ${rows.length.toLocaleString("zh-TW")} 項${fieldSummary ? `：${fieldSummary}` : ""}；顯示前 ${Math.min(rows.length, config.previewLimit)} 項`;
 }
 
 function runPreview() {
@@ -434,7 +492,7 @@ async function overwriteOriginal() {
     showMessage("沒有需要覆寫的修改。", "error");
     return;
   }
-  if (!globalThis.confirm(`將修改 ${state.preview.stats.changedRows} 列、${changeCount} 個欄位並覆寫「${state.targetName}」。\n覆寫前會先下載原檔備份，是否繼續？`)) return;
+  if (!globalThis.confirm(`請先關閉 Excel 中開啟的「${state.targetName}」。\n\n接下來會修改 ${state.preview.stats.changedRows} 列、${changeCount} 個欄位；先下載備份，再覆寫並驗證原檔。是否繼續？`)) return;
 
   clearMessage();
   elements.overwriteOriginal.disabled = true;
@@ -444,13 +502,14 @@ async function overwriteOriginal() {
     const blob = createUpdatedWorkbook(state.targetWorkbook, state.preview);
     const backupName = makeBackupName(state.targetName, state.preview.replyPeriod);
     downloadBlob(backupBlob, backupName);
-    await writeFileHandle(state.targetFileHandle, blob);
+    const writtenFile = await writeFileHandle(state.targetFileHandle, blob);
 
-    state.targetOriginalFile = new File([blob], state.targetName, { type: blob.type });
+    state.targetOriginalFile = writtenFile;
+    state.targetWorkbook = openWorkbook(await writtenFile.arrayBuffer(), state.targetName);
     resetPreview();
-    showMessage(`已下載「${backupName}」，並完成覆寫「${state.targetName}」。`, "success");
+    showMessage(`已下載「${backupName}」，並確認「${state.targetName}」已寫入。請重新開啟 Excel 查看。`, "success");
   } catch (error) {
-    showMessage(`原檔未完成覆寫：${friendlyError(error)}`, "error");
+    showMessage(`原檔未完成覆寫：${friendlyOverwriteError(error)}`, "error");
   } finally {
     elements.overwriteOriginal.textContent = "備份後覆寫原檔";
   }
