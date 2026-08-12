@@ -92,6 +92,11 @@ function normalizeReply(value) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim();
 }
 
+export function resolveRenewalStatus(sourceStatus, localStatus) {
+  const local = normalizeReply(localStatus);
+  return local.toUpperCase() === "OK" ? local : normalizeReply(sourceStatus);
+}
+
 function resolveReplyPeriod(fileName, sheetName) {
   const normalizedSheet = String(sheetName || "").trim();
   const compactDate = normalizedSheet.match(/(?:^|\D)((?:19|20)\d{2})(0[1-9]|1[0-2])(?:\D|$)/);
@@ -411,7 +416,7 @@ export function buildPreview({
       compareField(
         headers.renewalStatus,
         targetRow.oldRenewalStatus,
-        renewalStatus,
+        resolveRenewalStatus(renewalStatus, targetRow.oldRenewalStatus),
         target.header.columns[headers.renewalStatus],
         targetRow.renewalStatusHasFormula,
       );
