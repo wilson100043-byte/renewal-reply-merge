@@ -1,6 +1,4 @@
-const MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-const XML_NS = "http://www.w3.org/XML/1998/namespace";
 
 const decoder = new TextDecoder("utf-8");
 const encoder = new TextEncoder();
@@ -294,10 +292,8 @@ function readTargetIndex(targetSheet, workbook, headers) {
     const renewalStatusCell = cells.get(header.columns[headers.renewalStatus]);
     const item = {
       id,
-      row,
       rowNumber,
       oldReply: normalizeReply(replyCell?.value),
-      replyCell: replyCell?.node || null,
       replyHasFormula: Boolean(replyCell?.hasFormula),
       oldRenewalStatus: normalizeReply(renewalStatusCell?.value),
       renewalStatusHasFormula: Boolean(renewalStatusCell?.hasFormula),
@@ -399,7 +395,6 @@ export function buildPreview({
         changes.push({
           id,
           field,
-          row: targetRow.row,
           rowNumber: targetRow.rowNumber,
           oldReply: oldValue,
           newReply: newValue,
@@ -463,36 +458,57 @@ export function buildPreview({
   };
 }
 
-function setInlineStringCell(sheetDocument, row, rowNumber, column, value) {
-  const cellReference = `${column}${rowNumber}`;
-  let cell = childElements(row, "c").find((item) => item.getAttribute("r") === cellReference);
-
-  if (!cell) {
-    cell = sheetDocument.createElementNS(MAIN_NS, "c");
-    cell.setAttribute("r", cellReference);
-    const desiredColumn = columnNumber(column);
-    const nextCell = childElements(row, "c").find(
-      (item) => columnNumber(cellColumn(item.getAttribute("r"))) > desiredColumn,
-    );
-    if (nextCell) row.insertBefore(cell, nextCell);
-    else row.appendChild(cell);
-  }
-
-  while (cell.firstChild) cell.removeChild(cell.firstChild);
-  cell.setAttribute("t", "inlineStr");
-  const inlineString = sheetDocument.createElementNS(MAIN_NS, "is");
-  const text = sheetDocument.createElementNS(MAIN_NS, "t");
-  text.setAttributeNS(XML_NS, "xml:space", "preserve");
-  text.textContent = value;
-  inlineString.appendChild(text);
-  cell.appendChild(inlineString);
+function escapeXmlText(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function serializeXml(document, originalText) {
-  const serialized = new XMLSerializer().serializeToString(document);
-  const declaration = originalText.match(/^<\?xml[^>]+\?>/)?.[0];
-  if (declaration && !serialized.startsWith("<?xml")) return `${declaration}${serialized}`;
-  return serialized;
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function patchWorksheetCell(xmlText, rowNumber, column, value) {
+  const cellReference = `${column}${rowNumber}`;
+  const tagPrefix = "(?:[A-Za-z_][\\w.-]*:)?";
+  const rowPattern = new RegExp(
+    `<${tagPrefix}row\\b(?=[^>]*\\br="${rowNumber}")[^>]*>[\\s\\S]*?<\\/${tagPrefix}row>`,
+  );
+  const rowMatch = xmlText.match(rowPattern);
+  if (!rowMatch || rowMatch.index === undefined) {
+    throw new WorkbookError(`找不到目標列 ${rowNumber}。`, "ROW_NOT_FOUND");
+  }
+  const rowXml = rowMatch[0];
+  const prefix = rowXml.match(/^<([A-Za-z_][\w.-]*:)?row\b/)?.[1] || "";
+  const cellPattern = new RegExp(
+    `<${tagPrefix}c\\b(?=[^>]*\\br="${escapeRegExp(cellReference)}")[^>]*(?:\\/>|>[\\s\\S]*?<\\/${tagPrefix}c>)`,
+  );
+  const existingCell = rowXml.match(cellPattern)?.[0] || "";
+  const content = `<${prefix}is><${prefix}t xml:space="preserve">${escapeXmlText(value)}</${prefix}t></${prefix}is>`;
+  let updatedRow;
+
+  if (existingCell) {
+    const openingTag = existingCell.match(/^<[^>]+>/)?.[0] || "";
+    const attributes = openingTag
+      .replace(/^<[^\s>]+/, "")
+      .replace(/\s*\/?>$/, "")
+      .replace(/\s+t=(["'])[^"']*\1/g, "")
+      .trim();
+    const replacement = `<${prefix}c${attributes ? ` ${attributes}` : ""} t="inlineStr">${content}</${prefix}c>`;
+    updatedRow = rowXml.replace(cellPattern, replacement);
+  } else {
+    const newCell = `<${prefix}c r="${cellReference}" t="inlineStr">${content}</${prefix}c>`;
+    const allCellsPattern = new RegExp(
+      `<${tagPrefix}c\\b[^>]*(?:\\/>|>[\\s\\S]*?<\\/${tagPrefix}c>)`,
+      "g",
+    );
+    const nextCell = [...rowXml.matchAll(allCellsPattern)].find((match) => {
+      const reference = match[0].match(/\br="([^"]+)"/)?.[1] || "";
+      return columnNumber(cellColumn(reference)) > columnNumber(column);
+    });
+    const insertionIndex = nextCell?.index ?? rowXml.lastIndexOf(`</${prefix}row>`);
+    updatedRow = `${rowXml.slice(0, insertionIndex)}${newCell}${rowXml.slice(insertionIndex)}`;
+  }
+
+  return `${xmlText.slice(0, rowMatch.index)}${updatedRow}${xmlText.slice(rowMatch.index + rowXml.length)}`;
 }
 
 export function createUpdatedWorkbook(targetWorkbook, preview) {
@@ -503,17 +519,10 @@ export function createUpdatedWorkbook(targetWorkbook, preview) {
     throw new WorkbookError("沒有需要修改的資料。", "NO_CHANGES");
   }
 
+  let updatedXml = preview.targetSheet.xmlText;
   for (const change of preview.changes) {
-    setInlineStringCell(
-      preview.targetSheet.document,
-      change.row,
-      change.rowNumber,
-      change.column,
-      change.newReply,
-    );
+    updatedXml = patchWorksheetCell(updatedXml, change.rowNumber, change.column, change.newReply);
   }
-
-  const updatedXml = serializeXml(preview.targetSheet.document, preview.targetSheet.xmlText);
   targetWorkbook.files[preview.targetSheet.path] = encoder.encode(updatedXml);
   const bytes = globalThis.fflate.zipSync(targetWorkbook.files, { level: 6 });
   return new Blob([bytes], {

@@ -6,7 +6,7 @@ import {
   makeOutputName,
   openWorkbook,
 } from "./xlsx-engine.js";
-import { makeBackupName, writeFileHandle } from "./file-output.js";
+import { makeBackupName, snapshotFile, writeFileHandle } from "./file-output.js";
 
 const config = globalThis.APP_CONFIG;
 const state = {
@@ -440,9 +440,10 @@ async function overwriteOriginal() {
   elements.overwriteOriginal.disabled = true;
   elements.overwriteOriginal.textContent = "正在備份並覆寫…";
   try {
+    const backupBlob = await snapshotFile(state.targetOriginalFile);
     const blob = createUpdatedWorkbook(state.targetWorkbook, state.preview);
-    const backupName = makeBackupName(state.targetName);
-    downloadBlob(state.targetOriginalFile, backupName);
+    const backupName = makeBackupName(state.targetName, state.preview.replyPeriod);
+    downloadBlob(backupBlob, backupName);
     await writeFileHandle(state.targetFileHandle, blob);
 
     state.targetOriginalFile = new File([blob], state.targetName, { type: blob.type });

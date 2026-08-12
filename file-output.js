@@ -1,9 +1,14 @@
-export function makeBackupName(originalName, date = new Date()) {
+export function makeBackupName(originalName, period = "") {
   const stem = originalName.replace(/\.xlsx$/i, "");
-  const stamp = [date.getFullYear(), date.getMonth() + 1, date.getDate()]
-    .map((value) => String(value).padStart(2, "0"))
-    .join("");
-  return `${stem}_${stamp}_覆寫前備份.xlsx`;
+  const now = new Date();
+  const month = /^\d{6}$/.test(period)
+    ? period
+    : `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${stem}_${month}_覆寫前備份.xlsx`;
+}
+
+export async function snapshotFile(file) {
+  return new Blob([await file.arrayBuffer()], { type: file.type });
 }
 
 export async function writeFileHandle(handle, blob) {
