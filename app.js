@@ -18,6 +18,7 @@ const state = {
   sourceName: "",
   targetName: "",
   preview: null,
+  updatedWorkbookBlob: null,
   activeFilter: "changes",
 };
 
@@ -287,6 +288,7 @@ async function loadTargetFile(file) {
 
 function resetPreview() {
   state.preview = null;
+  state.updatedWorkbookBlob = null;
   elements.previewContent.hidden = true;
   elements.emptyPreview.hidden = false;
   elements.previewRows.replaceChildren();
@@ -411,6 +413,9 @@ function runPreview() {
       targetSheetName: config.targetSheetName,
       headers: config.headers,
     });
+    state.updatedWorkbookBlob = state.preview.changes.length
+      ? createUpdatedWorkbook(state.targetWorkbook, state.preview)
+      : null;
     renderSummary(state.preview);
     state.activeFilter = "changes";
     document.querySelectorAll(".filter-tab").forEach((tab) =>
@@ -448,9 +453,8 @@ function downloadBlob(blob, fileName) {
 function downloadResult() {
   clearMessage();
   try {
-    const blob = createUpdatedWorkbook(state.targetWorkbook, state.preview);
     const outputName = makeOutputName(state.targetName);
-    downloadBlob(blob, outputName);
+    downloadBlob(state.updatedWorkbookBlob, outputName);
     elements.downloadResult.focus();
     showMessage(`已產生「${outputName}」，原始 Excel 沒有被修改。`, "success");
   } catch (error) {
@@ -499,10 +503,9 @@ async function overwriteOriginal() {
   elements.overwriteOriginal.textContent = "正在備份並覆寫…";
   try {
     const backupBlob = await snapshotFile(state.targetOriginalFile);
-    const blob = createUpdatedWorkbook(state.targetWorkbook, state.preview);
     const backupName = makeBackupName(state.targetName, state.preview.replyPeriod);
     downloadBlob(backupBlob, backupName);
-    const writtenFile = await writeFileHandle(state.targetFileHandle, blob);
+    const writtenFile = await writeFileHandle(state.targetFileHandle, state.updatedWorkbookBlob);
 
     state.targetOriginalFile = writtenFile;
     state.targetWorkbook = openWorkbook(await writtenFile.arrayBuffer(), state.targetName);
